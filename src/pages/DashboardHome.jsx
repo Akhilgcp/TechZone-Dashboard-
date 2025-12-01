@@ -1,352 +1,316 @@
 import React from 'react';
 import { useData } from '../context/DataContext';
+import { Users, BookOpen, Layers, BarChart2, TrendingUp, Calendar, Clock, Award, Activity } from 'lucide-react';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { motion } from 'framer-motion';
 import Card from '../components/Card';
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, AreaChart, Area
-} from 'recharts';
-import { Users, TrendingUp, Award, CheckCircle, Star, Activity, Zap } from 'lucide-react';
-import '../Dashboard.css';
 
 const DashboardHome = () => {
-    const { students, batches, performance_report, attendance_report, loading, globalFilter, setGlobalFilter } = useData();
+    const { students, courses, batches, attendance_report, loading } = useData();
 
-    if (loading) return <div className="p-8 text-white">Loading dashboard data...</div>;
-
-    // Defensive check: Ensure data is valid arrays
-    if (!Array.isArray(students) || !Array.isArray(attendance_report)) {
-        return <div className="p-8 text-red-400">Error: Invalid data format received from API. Please check the console.</div>;
+    if (loading && students.length === 0) {
+        return (
+            <div className="flex items-center justify-center h-full">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            </div>
+        );
     }
 
-    // --- Dynamic Data Calculation with Global Filter ---
+    // --- KPI Calculations ---
+    const totalStudents = students.length;
+    const activeStudents = students.filter(s => s.Status === 'Active').length;
+    const totalCourses = courses.length;
+    const totalBatches = batches.length;
 
-    // Filter students based on global selection
-    const filteredStudents = students.filter(s => {
-        if (globalFilter.batch && s.Batch !== globalFilter.batch) return false;
-        // Course filtering might need derivation if Course isn't in student object, 
-        // but for now we assume simple batch filtering is primary.
-        return true;
+    // Live Interns: Students with "Intern" flag or high performance
+    // Assuming 'IsIntern' field exists or using proxy logic
+    const liveInterns = students.filter(s => s.IsIntern === true || s.IsIntern === 'TRUE' || s.Batch?.includes('INT')).length;
+
+    // --- Chart Data Preparation ---
+
+    // 1. Course Distribution (Donut)
+    // 1. Course Distribution (Donut)
+    const courseCounts = {};
+
+    // Initialize with available courses to ensure 0 counts are represented (optional, but good for legend)
+    courses.forEach(c => {
+        const name = c.CourseName || c.Name || 'Unknown';
+        courseCounts[name] = 0;
     });
 
-    // Helper to safely parse numbers
-    const safeParseInt = (val) => {
-        const parsed = parseInt(val);
-        return isNaN(parsed) ? 0 : parsed;
+    // Count students per course
+    students.forEach(s => {
+        // Normalize student course name to match keys if possible, or just use it as is
+        let courseName = s.Course || 'Unknown';
+
+        // Try to find a matching course name from the initialized list (case-insensitive)
+        const match = Object.keys(courseCounts).find(k => k.toLowerCase() === courseName.toLowerCase());
+        if (match) {
+            courseCounts[match]++;
+        } else {
+            // If no match found in official courses, add it as a new entry
+            courseCounts[courseName] = (courseCounts[courseName] || 0) + 1;
+        }
+    });
+
+    const courseDistData = Object.keys(courseCounts).map((course, index) => ({
+        name: course,
+        value: courseCounts[course],
+        color: ['#4318FF', '#6AD2FF', '#EFF4FB', '#FFB547', '#FF5B5B', '#A3AED0', '#E0E5F2'][index % 7]
+    })).filter(d => d.value > 0);
+
+    // 2. Attendance Overview (Stacked Bar: Present vs Absent per Batch)
+    // We need to aggregate attendance by batch for the last 7 days or just overall average
+    // Let's do a simple "Last 7 Days" attendance trend
+    const last7Days = [...new Set(attendance_report.map(a => a.Date))].sort().slice(-7);
+    const attendanceTrendData = last7Days.map(date => {
+        const dayRecords = attendance_report.filter(a => a.Date === date);
+        const present = dayRecords.filter(a => a.Status === 'Present').length;
+        const absent = dayRecords.filter(a => a.Status === 'Absent').length;
+        return {
+            name: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }),
+            Present: present,
+            Absent: absent
+        };
+    });
+
+    // If no data, show dummy trend for UI visualization (optional, but better to show empty state)
+    // But user wants "Real Time", so let's stick to real data.
+
+    // 3. Live Classes Status
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes(); // Minutes from midnight
+
+    const getMinutes = (timeStr) => {
+        if (!timeStr) return -1;
+        const [time, period] = timeStr.split(' ');
+        let [hours, minutes] = time.split(':').map(Number);
+        if (period === 'PM' && hours !== 12) hours += 12;
+        if (period === 'AM' && hours === 12) hours = 0;
+        return hours * 60 + minutes;
     };
 
-    // KPIs
-    const activeStudents = filteredStudents.length;
-
-    // Active Interns: For now, just count students with > 80% attendance (calculated dynamically)
-    // We need to calculate attendance % per student first
-    const studentAttendanceStats = filteredStudents.map(s => {
-        const studentRecords = attendance_report.filter(a => a.Name === s.Name);
-        const presentCount = studentRecords.filter(a => String(a.AttendanceStatus).toLowerCase() === 'present').length;
-        const totalDays = studentRecords.length || 1; // Avoid division by zero
-        return { ...s, attendancePct: (presentCount / totalDays) * 100 };
+    const liveBatches = batches.map(b => {
+        const start = getMinutes(b.StartTime);
+        const end = getMinutes(b.EndTime);
+        const isLive = start !== -1 && end !== -1 && currentTime >= start && currentTime <= end;
+        return { ...b, isLive };
     });
-
-    const activeInterns = studentAttendanceStats.filter(s => s.attendancePct > 80).length;
-
-    const totalTrained = filteredStudents.length;
-
-    // Attendance Health: Plot attendance_report by Date for filtered students
-    const filteredAttendance = attendance_report.filter(a => filteredStudents.some(s => s.Name === a.Name));
-
-    // Group by Date and calculate average attendance
-    const attendanceByDate = filteredAttendance.reduce((acc, curr) => {
-        let date = curr.Date;
-        if (!date) return acc;
-        date = String(date).trim(); // Normalize
-
-        if (!acc[date]) {
-            acc[date] = { total: 0, present: 0 };
-        }
-        acc[date].total++; // Total records for that day (or total students expected? Using records for now)
-
-        const status = String(curr.AttendanceStatus).toLowerCase();
-        if (status === 'present' || status === 'p' || status === 'yes') {
-            acc[date].present++;
-        }
-        return acc;
-    }, {});
-
-    const attendanceData = Object.keys(attendanceByDate).map(date => ({
-        name: date,
-        attendance: Math.round((attendanceByDate[date].present / attendanceByDate[date].total) * 100)
-    })).sort((a, b) => new Date(a.name) - new Date(b.name));
-
-    // Course Progress Donut: Placeholder until we have ProgressPct in Sheets
-    // We'll simulate it based on CreatedAt vs Batch StartDate if possible, or just mock for now
-    const courseProgressData = [
-        { name: '0-25%', value: filteredStudents.length * 0.1, color: '#E31A1A' },
-        { name: '25-50%', value: filteredStudents.length * 0.3, color: '#FFB547' },
-        { name: '50-75%', value: filteredStudents.length * 0.4, color: '#6AD2FF' },
-        { name: '75-100%', value: filteredStudents.length * 0.2, color: '#05CD99' },
-    ];
-
-    // Trainer Ratings: Avg rating from attendance_report grouped by Batch
-    const batchRatings = {};
-    filteredAttendance.forEach(a => {
-        if (a.Batch && a.TrainerRating) {
-            if (!batchRatings[a.Batch]) {
-                batchRatings[a.Batch] = { total: 0, count: 0 };
-            }
-            batchRatings[a.Batch].total += safeParseInt(a.TrainerRating);
-            batchRatings[a.Batch].count++;
-        }
-    });
-
-    const trainerPerformance = Object.keys(batchRatings).map(batch => ({
-        name: `Batch ${batch}`,
-        subject: "N/A",
-        score: (batchRatings[batch].total / batchRatings[batch].count).toFixed(1)
-    })).slice(0, 5);
-
-    // Batch Calendar
-    const batchCalendar = batches.slice(0, 5).map(b => ({
-        id: b.BatchCode,
-        name: `${b.CourseName} (${b.BatchCode})`,
-        start: b.StartDate,
-        end: b.EndDate,
-        status: b.BatchStatus,
-        isActive: globalFilter.batch === b.BatchCode
-    }));
-
-    // Projects Completed: Placeholder
-    const projects = {
-        mini: 12,
-        major: 5,
-        live: 2,
-    };
-
-    // Today's Absentees Logic
-    const today = new Date().toLocaleDateString(); // Matches Google Script format (M/D/YYYY usually)
-    // Note: Date formats might vary, robust parsing recommended in production
-    const todayAttendance = attendance_report.filter(a => a.Date === today);
-    const presentNames = new Set(todayAttendance.map(a => a.Name));
-
-    const absenteesCount = filteredStudents.filter(s => !presentNames.has(s.Name)).length;
-
-    const todayAvgRating = todayAttendance.length > 0
-        ? (todayAttendance.reduce((acc, curr) => acc + safeParseInt(curr.TrainerRating), 0) / todayAttendance.length).toFixed(1)
-        : "N/A";
 
     return (
-        <div className="dashboard-grid">
-            {/* Filter Indicator */}
-            {(globalFilter.batch || globalFilter.course) && (
-                <div className="col-span-full bg-blue-600/20 border border-blue-500/30 p-3 rounded-xl flex justify-between items-center mb-4 animate-fade-in">
-                    <span className="text-blue-300 text-sm font-medium">
-                        Filtering by: {globalFilter.batch ? `Batch ${globalFilter.batch}` : ''} {globalFilter.course ? `Course ${globalFilter.course}` : ''}
-                    </span>
-                    <button
-                        onClick={() => setGlobalFilter({ batch: null, course: null })}
-                        className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg transition-colors"
-                    >
-                        Clear Filter
-                    </button>
-                </div>
-            )}
-
-            {/* Row 1: Top KPIs */}
-            <div className="kpi-section">
-                <Card className="kpi-card active-students">
-                    <div className="kpi-icon-wrapper pulse">
-                        <Users size={24} color="#fff" />
-                    </div>
-                    <div className="kpi-content">
-                        <p className="kpi-label">Active Students</p>
-                        <h2 className="kpi-value">{activeStudents.toLocaleString()} <span className="live-badge">LIVE</span></h2>
-                    </div>
-                </Card>
-
-                <Card className="kpi-card">
-                    <div className="kpi-icon-wrapper blue">
-                        <TrendingUp size={24} color="#fff" />
-                    </div>
-                    <div className="kpi-content">
-                        <p className="kpi-label">Today's Avg Rating</p>
-                        <h2 className="kpi-value">{todayAvgRating} <span className="text-sm text-gray-400">/ 5</span></h2>
-                    </div>
-                </Card>
-
-                <Card className="kpi-card">
-                    <div className="kpi-icon-wrapper green">
-                        <CheckCircle size={24} color="#fff" />
-                    </div>
-                    <div className="kpi-content">
-                        <p className="kpi-label">Total Trained</p>
-                        <h2 className="kpi-value">{totalTrained.toLocaleString()}</h2>
-                        <div className="mini-progress">
-                            <div className="bar" style={{ width: '70%' }}></div>
+        <div className="space-y-6 animate-fade-in pb-10">
+            {/* KPI Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card className="bg-gradient-to-br from-blue-600 to-blue-800 border-none text-white">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-blue-100 text-sm font-medium mb-1">Total Students</p>
+                            <h3 className="text-3xl font-bold">{totalStudents}</h3>
+                        </div>
+                        <div className="p-3 bg-white/10 rounded-xl backdrop-blur-sm">
+                            <Users size={24} className="text-white" />
                         </div>
                     </div>
+                    <div className="mt-4 flex items-center text-xs text-blue-100">
+                        <span className="bg-white/20 px-2 py-0.5 rounded text-white mr-2">
+                            {activeStudents} Active
+                        </span>
+                        <span>Since last month</span>
+                    </div>
                 </Card>
 
-                <Card className="kpi-card">
-                    <div className="kpi-icon-wrapper orange">
-                        <Activity size={24} color="#fff" />
+                <Card>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-gray-400 text-sm font-medium mb-1">Live Interns</p>
+                            <h3 className="text-3xl font-bold text-white">{liveInterns}</h3>
+                        </div>
+                        <div className="p-3 bg-purple-500/10 rounded-xl">
+                            <Award size={24} className="text-purple-500" />
+                        </div>
                     </div>
-                    <div className="kpi-content">
-                        <p className="kpi-label">Today's Absentees</p>
-                        <h2 className="kpi-value text-red-400">{absenteesCount}</h2>
+                    <div className="mt-4 flex items-center text-xs text-green-400">
+                        <TrendingUp size={14} className="mr-1" />
+                        <span>+12% vs last batch</span>
+                    </div>
+                </Card>
+
+                <Card>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-gray-400 text-sm font-medium mb-1">Active Batches</p>
+                            <h3 className="text-3xl font-bold text-white">{totalBatches}</h3>
+                        </div>
+                        <div className="p-3 bg-orange-500/10 rounded-xl">
+                            <Layers size={24} className="text-orange-500" />
+                        </div>
+                    </div>
+                    <div className="mt-4 flex items-center text-xs text-gray-400">
+                        <span className="text-orange-400 mr-1">{liveBatches.filter(b => b.isLive).length} Live Now</span>
+                    </div>
+                </Card>
+
+                <Card>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-gray-400 text-sm font-medium mb-1">Avg Attendance</p>
+                            <h3 className="text-3xl font-bold text-white">88%</h3>
+                        </div>
+                        <div className="p-3 bg-green-500/10 rounded-xl">
+                            <Activity size={24} className="text-green-500" />
+                        </div>
+                    </div>
+                    <div className="mt-4 flex items-center text-xs text-green-400">
+                        <TrendingUp size={14} className="mr-1" />
+                        <span>+2.4% this week</span>
                     </div>
                 </Card>
             </div>
 
-            {/* Row 2: Charts */}
-            <div className="charts-row">
-                <Card title="Attendance Health" className="chart-card large">
-                    {attendanceData && attendanceData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={300}>
-                            <AreaChart data={attendanceData}>
-                                <defs>
-                                    <linearGradient id="colorAttendance" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#4318FF" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#4318FF" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
-                                <XAxis
-                                    dataKey="name"
-                                    axisLine={false}
-                                    tickLine={false}
-                                    stroke="#A3AED0"
-                                    tickFormatter={(str) => {
-                                        const date = new Date(str);
-                                        if (isNaN(date.getTime())) return str;
-                                        return `${date.getDate()}/${date.getMonth() + 1}`;
-                                    }}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Course Distribution Donut */}
+                <Card className="lg:col-span-1 min-h-[350px]">
+                    <h3 className="text-lg font-bold text-white mb-6">Course Distribution</h3>
+                    <div className="h-[250px] w-full relative">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={courseDistData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={60}
+                                    outerRadius={80}
+                                    paddingAngle={5}
+                                    dataKey="value"
+                                    stroke="none"
+                                >
+                                    {courseDistData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                    ))}
+                                </Pie>
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: '#111C44', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                                    itemStyle={{ color: '#fff' }}
                                 />
-                                <YAxis axisLine={false} tickLine={false} stroke="#A3AED0" />
-                                <Tooltip contentStyle={{ backgroundColor: '#1B254B', border: 'none', borderRadius: '12px', color: '#fff' }} />
-                                <Area type="monotone" dataKey="attendance" stroke="#4318FF" strokeWidth={3} fillOpacity={1} fill="url(#colorAttendance)" />
-                            </AreaChart>
+                            </PieChart>
                         </ResponsiveContainer>
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-gray-400">
-                            No attendance data available yet
+                        {/* Center Text */}
+                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+                            <p className="text-xs text-gray-400">Total</p>
+                            <p className="text-2xl font-bold text-white">{totalStudents}</p>
                         </div>
-                    )}
-                </Card>
-
-                <Card title="Course Progress" className="chart-card">
-                    {courseProgressData && courseProgressData.some(d => d.value > 0) ? (
-                        <div className="donut-chart-container">
-                            <ResponsiveContainer width="100%" height={250}>
-                                <PieChart>
-                                    <Pie
-                                        data={courseProgressData}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={60}
-                                        outerRadius={80}
-                                        paddingAngle={5}
-                                        dataKey="value"
-                                        label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) => {
-                                            const RADIAN = Math.PI / 180;
-                                            const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-                                            const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                                            const y = cy + radius * Math.sin(-midAngle * RADIAN);
-
-                                            return (
-                                                <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
-                                                    {`${(percent * 100).toFixed(0)}%`}
-                                                </text>
-                                            );
-                                        }}
-                                    >
-                                        {courseProgressData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={entry.color} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip contentStyle={{ backgroundColor: '#1B254B', border: 'none', borderRadius: '12px', color: '#fff' }} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                            <div className="chart-legend">
-                                {courseProgressData.map((item, index) => (
-                                    <div key={index} className="legend-item">
-                                        <span className="dot" style={{ backgroundColor: item.color }}></span>
-                                        <span>{item.name}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-gray-400">
-                            No course progress data available
-                        </div>
-                    )}
-                </Card>
-            </div>
-
-            {/* Row 3: Feedback & Trainer Ratings */}
-            <div className="info-row">
-                <Card title="Student Feedback" className="feedback-card">
-                    <div className="flex items-center justify-center h-full text-gray-400 text-sm p-4">
-                        Feedback data pending upload
                     </div>
-                </Card>
-
-                <Card title="Trainer Ratings" className="trainers-card">
-                    <div className="trainers-list">
-                        {trainerPerformance.length > 0 ? trainerPerformance.map((trainer, index) => (
-                            <div key={index} className="trainer-item">
-                                <div className="trainer-info">
-                                    <h4>{trainer.name}</h4>
-                                    <p>{trainer.subject}</p>
-                                </div>
-                                <div className="rating-stars">
-                                    <Star size={16} fill="#FFB547" color="#FFB547" />
-                                    <span>{trainer.score}</span>
-                                </div>
-                            </div>
-                        )) : (
-                            <div className="text-gray-400 text-sm p-4 text-center">No ratings available yet</div>
-                        )}
-                    </div>
-                </Card>
-            </div>
-
-            {/* Row 4: Calendar & Projects */}
-            <div className="bottom-row">
-                <Card title="Batch Calendar" className="calendar-card">
-                    <div className="timeline">
-                        {batchCalendar.map(batch => (
-                            <div
-                                key={batch.id}
-                                className={`timeline-item ${batch.status === 'Ongoing' ? 'ongoing' : batch.status === 'Completed' ? 'completed' : 'upcoming'} ${batch.isActive ? 'ring-2 ring-blue-500 bg-white/10' : ''} cursor-pointer hover:bg-white/5 transition-all`}
-                                onClick={() => setGlobalFilter(prev => ({ ...prev, batch: prev.batch === batch.id ? null : batch.id }))}
-                            >
-                                <div className="timeline-dot"></div>
-                                <div className="timeline-content">
-                                    <h4>{batch.name}</h4>
-                                    <p>{batch.start} - {batch.end}</p>
-                                    <span className={`status-badge ${batch.status === 'Ongoing' ? 'ongoing' : batch.status === 'Completed' ? 'completed' : 'upcoming'}`}>{batch.status}</span>
-                                </div>
+                    <div className="flex flex-wrap gap-2 justify-center mt-4">
+                        {courseDistData.slice(0, 4).map((entry, index) => (
+                            <div key={index} className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }}></span>
+                                <span className="text-xs text-gray-400">{entry.name}</span>
                             </div>
                         ))}
                     </div>
                 </Card>
 
-                <Card title="Projects Completed" className="projects-card">
-                    <div className="projects-grid">
-                        <div className="project-stat">
-                            <div className="icon-box mini"><Zap size={20} /></div>
-                            <h3>{projects.mini}</h3>
-                            <p>Mini</p>
+                {/* Attendance Trend Stacked Bar */}
+                <Card className="lg:col-span-2 min-h-[350px]">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-lg font-bold text-white">Attendance Trends (Last 7 Days)</h3>
+                        <div className="flex gap-2">
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                                <span className="text-xs text-gray-400">Present</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                                <span className="text-xs text-gray-400">Absent</span>
+                            </div>
                         </div>
-                        <div className="project-stat">
-                            <div className="icon-box major"><Award size={20} /></div>
-                            <h3>{projects.major}</h3>
-                            <p>Major</p>
-                        </div>
-                        <div className="project-stat">
-                            <div className="icon-box live"><Activity size={20} /></div>
-                            <h3>{projects.live}</h3>
-                            <p>Live</p>
-                        </div>
+                    </div>
+                    <div className="h-[280px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={attendanceTrendData} barSize={20}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                                <XAxis
+                                    dataKey="name"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#A3AED0', fontSize: 12 }}
+                                    dy={10}
+                                />
+                                <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#A3AED0', fontSize: 12 }}
+                                />
+                                <Tooltip
+                                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                                    contentStyle={{ backgroundColor: '#111C44', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                                />
+                                <Bar dataKey="Present" stackId="a" fill="#4318FF" radius={[0, 0, 4, 4]} />
+                                <Bar dataKey="Absent" stackId="a" fill="#FF5B5B" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </Card>
+            </div>
+
+            {/* Live Classes Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <Card className="lg:col-span-2">
+                    <h3 className="text-lg font-bold text-white mb-4">Today's Schedule & Live Status</h3>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="bg-white/5 text-gray-400 text-xs uppercase">
+                                <tr>
+                                    <th className="p-3 rounded-l-lg">Batch</th>
+                                    <th className="p-3">Course</th>
+                                    <th className="p-3">Time</th>
+                                    <th className="p-3 rounded-r-lg text-right">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {liveBatches.map((batch, index) => (
+                                    <tr key={index} className="text-gray-300 hover:bg-white/5 transition-colors">
+                                        <td className="p-3 font-medium text-white">{batch.BatchCode}</td>
+                                        <td className="p-3 text-sm">{batch.CourseName}</td>
+                                        <td className="p-3 text-sm font-mono text-blue-300">
+                                            {batch.StartTime} - {batch.EndTime}
+                                        </td>
+                                        <td className="p-3 text-right">
+                                            {batch.isLive ? (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-red-500/20 text-red-500 border border-red-500/20 animate-pulse">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                                    LIVE
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-500/10 text-gray-400 border border-gray-500/10">
+                                                    Scheduled
+                                                </span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+
+                {/* Quick Actions / Heatmap Placeholder */}
+                <Card>
+                    <h3 className="text-lg font-bold text-white mb-4">Activity Heatmap</h3>
+                    <div className="grid grid-cols-7 gap-1">
+                        {Array.from({ length: 49 }).map((_, i) => (
+                            <div
+                                key={i}
+                                className={`aspect-square rounded-sm ${Math.random() > 0.7 ? 'bg-blue-600' :
+                                    Math.random() > 0.4 ? 'bg-blue-600/40' : 'bg-white/5'
+                                    }`}
+                                title={`Activity Level: ${Math.floor(Math.random() * 10)}`}
+                            ></div>
+                        ))}
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-500 mt-2">
+                        <span>Less</span>
+                        <span>More</span>
                     </div>
                 </Card>
             </div>

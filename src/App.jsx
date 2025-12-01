@@ -1,48 +1,55 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { DataProvider } from './context/DataContext';
 import MainLayout from './layout/MainLayout';
 import DashboardHome from './pages/DashboardHome';
-import Students from './pages/Students';
-import Courses from './pages/Courses';
-import Batches from './pages/Batches';
-import Reports from './pages/Reports';
-import Settings from './pages/Settings';
-import { DataProvider } from './context/DataContext';
-import './Dashboard.css';
-import ErrorBoundary from './components/ErrorBoundary'; // Added ErrorBoundary import
-
+import StudentsList from './pages/StudentsList';
 import StudentRegistration from './pages/StudentRegistration';
 import AttendanceForm from './pages/AttendanceForm';
 import QRManagement from './pages/QRManagement';
+import Settings from './pages/Settings';
+import Login from './pages/Login';
+import CoursesCatalog from './pages/CoursesCatalog';
+import CoursesAdmin from './pages/CoursesAdmin';
+import BatchesView from './pages/BatchesView';
+import BatchesAdmin from './pages/BatchesAdmin';
+import ReportsHub from './pages/ReportsHub';
+import Toast from './components/Toast';
+import DebugPanel from './components/DebugPanel';
 
 function App() {
   return (
-    <ErrorBoundary>
+    <Router>
       <DataProvider>
-        <Router>
-          <Routes>
-            {/* Public Routes (No Sidebar/Header) */}
-            <Route path="/qr-registration" element={<StudentRegistration />} />
-            <Route path="/qr-attendance" element={<AttendanceForm />} />
+        <Toast />
+        {/* <DebugPanel /> */}
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-            {/* Protected Dashboard Routes */}
-            <Route path="/*" element={
-              <MainLayout>
-                <Routes>
-                  <Route path="/" element={<DashboardHome />} />
-                  <Route path="/students" element={<Students />} />
-                  <Route path="/courses" element={<Courses />} />
-                  <Route path="/batches" element={<Batches />} />
-                  <Route path="/reports" element={<Reports />} />
-                  <Route path="/qr-management" element={<QRManagement />} />
-                  <Route path="/settings" element={<Settings />} />
-                </Routes>
-              </MainLayout>
-            } />
-          </Routes>
-        </Router>
+          {/* Public Routes (No Sidebar) */}
+          <Route path="/students/register" element={<StudentRegistration />} />
+          <Route path="/attendance" element={<AttendanceForm />} />
+
+          <Route path="/" element={<MainLayout />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardHome />} />
+            <Route path="students" element={<StudentsList />} />
+            {/* <Route path="students/register" element={<StudentRegistration />} /> */}
+            {/* <Route path="attendance" element={<AttendanceForm />} /> */}
+            <Route path="qr-management" element={<QRManagement />} />
+            <Route path="settings" element={<Settings />} />
+
+            <Route path="courses" element={<CoursesCatalog />} />
+            <Route path="courses-admin" element={<CoursesAdmin />} />
+            <Route path="batches" element={<BatchesView />} />
+            <Route path="batches-admin" element={<BatchesAdmin />} />
+            <Route path="reports" element={<ReportsHub />} />
+          </Route>
+
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
       </DataProvider>
-    </ErrorBoundary>
+    </Router>
   );
 }
 

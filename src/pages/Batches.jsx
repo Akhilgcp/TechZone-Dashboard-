@@ -9,11 +9,15 @@ const Batches = () => {
 
     if (loading) return <div className="p-8 text-white">Loading batches data...</div>;
 
-    const filteredBatches = batches.filter(batch =>
-        batch.BatchCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        batch.CourseName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        batch.TrainerName.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredBatches = batches.filter(batch => {
+        if (!batch) return false;
+        const term = searchTerm.toLowerCase();
+        const code = batch.BatchCode ? String(batch.BatchCode).toLowerCase() : '';
+        const course = batch.CourseName ? String(batch.CourseName).toLowerCase() : '';
+        const trainer = batch.TrainerName ? String(batch.TrainerName).toLowerCase() : '';
+
+        return code.includes(term) || course.includes(term) || trainer.includes(term);
+    });
 
     return (
         <div className="space-y-6">

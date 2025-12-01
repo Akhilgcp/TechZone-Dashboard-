@@ -9,10 +9,14 @@ const Courses = () => {
 
     if (loading) return <div className="p-8 text-white">Loading courses data...</div>;
 
-    const filteredCourses = courses.filter(course =>
-        course.CourseName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        course.CourseCode.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredCourses = courses.filter(course => {
+        if (!course) return false;
+        const term = searchTerm.toLowerCase();
+        const name = course.CourseName ? String(course.CourseName).toLowerCase() : '';
+        const code = course.CourseCode ? String(course.CourseCode).toLowerCase() : '';
+
+        return name.includes(term) || code.includes(term);
+    });
 
     return (
         <div className="space-y-6">

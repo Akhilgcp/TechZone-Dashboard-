@@ -1,4 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+
 :root {
+
   /* TechZone Premium Brand Colors */
   --color-primary: #4318FF;
   --color-primary-light: #7551FF;

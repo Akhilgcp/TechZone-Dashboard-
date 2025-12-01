@@ -10,13 +10,21 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "autoprefixer": "^10.4.22",
+    "axios": "^1.13.2",
+    "framer-motion": "^12.23.24",
+    "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.460.0",
     "papaparse": "^5.4.1",
+    "postcss": "^8.5.6",
     "qrcode.react": "^3.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-hook-form": "^7.67.0",
     "react-router-dom": "^6.28.0",
+    "react-toastify": "^11.0.5",
     "recharts": "^2.13.0",
+    "tailwindcss": "^3.4.17",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

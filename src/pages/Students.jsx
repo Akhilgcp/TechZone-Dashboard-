@@ -97,10 +97,14 @@ const Students = () => {
     const filteredStudents = students.filter(student => {
         if (!student) return false;
         const term = searchTerm.toLowerCase();
+        const name = student.FullName ? String(student.FullName).toLowerCase() : '';
+        const id = student.StudentID ? String(student.StudentID).toLowerCase() : '';
+        const course = student.Course ? String(student.Course).toLowerCase() : '';
+
         return (
-            (student.FullName && student.FullName.toLowerCase().includes(term)) ||
-            (student.StudentID && student.StudentID.toLowerCase().includes(term)) ||
-            (student.Course && student.Course.toLowerCase().includes(term))
+            name.includes(term) ||
+            id.includes(term) ||
+            course.includes(term)
         );
     });
 
